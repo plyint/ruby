@@ -20,11 +20,11 @@ latest_gem_version() {
 # https://github.com/docker-library/ruby/issues/246
 rubygems='3.0.3'
 declare -A newEnoughRubygems=(
-	[2.6]=1 # 2.6.2 => gems 3.0.3
+	[2.6]=1 # 2.6.3 => gems 3.0.3 (https://github.com/ruby/ruby/blob/v2_6_3/lib/rubygems.rb#L12)
+	[2.7]=1 # 2.7.0-preview2 => gems 3.1.0.pre1 (https://github.com/ruby/ruby/blob/v2_7_0_preview1/lib/rubygems.rb#L12)
 )
 # TODO once all versions are in this family of "new enough", remove RUBYGEMS_VERSION code entirely
 
-travisEnv=
 for version in "${versions[@]}"; do
 	rcGrepV='-v'
 	rcVersion="${version%-rc}"
@@ -70,8 +70,8 @@ for version in "${versions[@]}"; do
 	echo "$version: $fullVersion; $shaVal"
 
 	for v in \
-		alpine{3.7,3.8,3.9} \
-		{jessie,stretch}{/slim,} \
+		alpine{3.12,3.11} \
+		{stretch,buster}{/slim,} \
 	; do
 		dir="$version/$v"
 		variant="$(basename "$v")"
@@ -97,20 +97,15 @@ for version in "${versions[@]}"; do
 			-e 's/^(FROM (debian|buildpack-deps|alpine)):.*/\1:'"$tag"'/' \
 			"$template" > "$dir/Dockerfile"
 
-		case "$variant" in
-			alpine3.8 | alpine3.7)
-				# Alpine 3.9+ uses OpenSSL, but 3.8/3.7 still uses LibreSSL
-				sed -ri -e 's/openssl/libressl/g' "$dir/Dockerfile"
+		case "$v" in
+			# https://packages.debian.org/sid/libgdbm-compat-dev (needed for "dbm" core module, but only in Buster+)
+			stretch/slim)
+				sed -i -e '/libgdbm-compat-dev/d' "$dir/Dockerfile"
 				;;
 		esac
 
-		if [ -n "${newEnoughRubygems[$version]:-}" ]; then
+		if [ -n "${newEnoughRubygems[$rcVersion]:-}" ]; then
 			sed -ri -e '/RUBYGEMS_VERSION/d' "$dir/Dockerfile"
 		fi
-
-		travisEnv='\n  - VERSION='"$version VARIANT=$v$travisEnv"
 	done
 done
-
-travis="$(awk -v 'RS=\n\n' '$1 == "env:" { $0 = "env:'"$travisEnv"'" } { printf "%s%s", $0, RS }' .travis.yml)"
-echo "$travis" > .travis.yml
